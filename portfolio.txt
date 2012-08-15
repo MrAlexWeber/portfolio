@@ -1,0 +1,236 @@
+portfolio.txt
+
+<?php
+
+/*
+This first function is one I refined from use on a few of our other sites. WordPress provides a way to describe categories of blog posts, but didn't show that description. Simply displaying this description was the first version.
+
+For my personal site, I modified this feature to instead check each page's title to see if there is a matching category, and if so, display the posts from this category after the page's content.
+*/
+
+/** custom page+category logic **/
+function list_posts_if_also_category() {
+        if(is_page() && !is_home() && !is_front_page()){
+        $this_post_title = the_title('','',FALSE);
+        $paged = (get_query_var('paged')) ? get_query_var('paged') : 1;
+
+                $posts_in_same_cat_as_title = new WP_Query('category_name='.$this_post_title.'&paged='.$paged);
+                $post_count = 1;
+                while ($posts_in_same_cat_as_title->have_posts()) : $posts_in_same_cat_as_title->the_post();
+                        $classes = 'post_box';
+                        /* below here is custom post title and byline logic */
+?>
+                        <div <?php post_class($classes); ?> id="post-<?php the_ID(); ?>">
+<?php                           thesis_hook_before_headline($post_count);
+                                if ($post_image['show'] && $post_image['y'] == 'before-headline')
+                                        echo $post_image['output'];
+                                //if (!is_page('reading')){
+                                        echo '                                  <h2><a href="'. get_permalink() .'">' . get_the_title() . '</a></h2>' . "\n";
+                                //}
+                                if ($post_image['show'] && $post_image['y'] == 'after-headline')
+                                        echo $post_image['output'];
+                                thesis_hook_after_headline($post_count);
+                                ?>
+                                <p class="headline_meta"><?php
+                                echo '<abbr class="published" title="' . get_the_time('Y-m-d') . '">' . get_the_time(get_option('date_format')) . '</abbr>';
+                                $sep = ' &middot; ';
+                                echo $sep . '<span><a href="' . get_permalink() . '#comments" rel="nofollow">';
+                                ?>Post A Comment<?php
+                                echo '</a></span>';
+
+                                thesis_hook_byline_item($post_count);
+                                edit_post_link(__('edit', 'thesis'), ' &middot; <span class="edit_post">[', ']</span>');
+?></p>
+                                <div class="format_text entry-content">
+                                <?php global $more; $more=0; the_content('Read more&hellip;'); ?>
+                                </div>
+                        </div>
+
+<?php
+                        $post_count++;
+                endwhile;
+                echo '<div class="bottom-nav">';
+                $bottom_nav_link_text = get_next_posts_link("Older Posts", $posts_in_same_cat_as_title->max_num_pages);
+                if (strlen($bottom_nav_link_text) < 1 && $paged > 1){ $bottom_nav_link_text = "No Older Posts"; }
+                echo $bottom_nav_link_text;
+                echo '</div>';
+        }
+}
+
+add_action('thesis_hook_after_content','list_posts_if_also_category');
+
+/* 
+The following code was meant to solve a simple design problem: we wanted our HTML heading elements to have a three-dimensional "banner" appearance without excess markup, and to be able to change the HTML easily if necessary.
+
+The solution I devised was to filter our wordpress widgets' content and add one extra <div> to create the ribbon effect. The element was styled to appear as a triangle of the appropriate color with CSS border properties.
+*/
+
+function ribbon_header($content=''){
+	$content = preg_replace("/<\/h(\d)>/", "</h$1><div class='ribbon-triangle'></div>", $content);
+	return $content;
+}
+
+//this is a slightly different variation of the above, just modifying the content of a specific widget.
+function quotes_mods($content=''){
+	if (stripos($content, "quotescollection")){
+		$link = '<a href="client-testimonials" class="all-link">All Testimonials &raquo;</a>';
+		$triangle = '<div class="grey-triangle"></div>';
+		$content = preg_replace("/<\/div><\/li>/", "$triangle $link</div></li>", $content);
+	}
+	return $content;
+}
+
+/*
+I learned about using "hooks" in WordPress while developing sites with the Thesis theme. Because of the ease of maintenance when custom code is separated from the underlying theme or plugin, we try to model this format whenever possible.
+
+However... it's not always possible. Some themes and plugins don't provide hooks in the places we need -- every system has its limitations. Below is an example of when I had to add a custom hook to a theme file.
+*/
+
+//add phone number and icons to header
+//using custom hook on html.php:511 -- do_action('pt_custom_inside_header');
+function phone_and_social_icons(){
+	echo '<div id="phone-social-container"><a id="phone-header" href="tel:1-888-413-7177">1-888-413-7177</a>' . "\n";
+	echo '<a id="fb-icon" class="social-icon" href="http://facebook.com/theartofcharm"></a>' . "\n";
+	echo '<a id="tw-icon" class="social-icon" href="http://twitter.com/theartofcharm"></a>' . "\n";
+	echo '<a id="yt-icon" class="social-icon" href="http://youtube.com/theartofcharm"></a>' . "\n";
+	echo '</div>' . "\n";
+			
+} add_action('pt_custom_inside_header','phone_and_social_icons');
+
+/*
+The following PHP and JavaScript files are components of a personality quiz I developed. The code and specifications were based on an email description of its functionality from a co-worker.
+
+One of the most important factors in this project was turnaround time, so this simple, functional version was hacked together quickly and piggybacked on existing libraries when possible (jQuery and jQuery-ui).
+*/
+
+/* quiz.php */
+/* specification:
+** pull variables from $_POST: conf, char, aggr, rapp, kiss, date
+** quiz_points = scale(20=0, 100=50)(conf + char + aggr + rapp)
+**
+** kiss_points = kiss * 2.5 (maximum of 25)
+** date_points = date * 2.5 (maximum of 25)
+**
+** charisma_score = quiz_points + kiss_points + date_points
+** if charisma_score > 80 then personality = 'natural'
+** else if charisma_score < 25 then personality = 'thinker'
+** else if charisma_score < 80 && charisma_score > 25
+** 	 calculate_highest_trait(char, aggr, rapp) // or just do it here
+** 
+** redirect to "type.php?p=$personality&c=$charisma_score"
+*/
+
+function translate_points($OldValue, $OldMin, $OldMax, $NewMin, $NewMax) {
+	return (((($OldValue - $OldMin) * ($NewMax - $NewMin)) / ($OldMax - $OldMin)) + $NewMin);
+}
+
+function calculate_highest_trait($one, $two, $three){
+	if ($one>$two && $two > $three):
+		return 1;
+	elseif ($two>$three):
+		return 2;
+	else:
+		return 3;
+	endif;
+}
+
+
+$conf = $char = $aggr = $rapp = $kiss = $date = 0; //init variables
+$kiss = $_POST['q21'];
+$date = $_POST['q22'];
+
+for ($i=1; $i<=5; $i++) {
+	$conf += $_POST['q'.$i];
+	$char += $_POST['q'.(5+$i)];
+	$aggr += $_POST['q'.(10+$i)];
+	$rapp += $_POST['q'.(15+$i)];
+}
+
+$quiz_points = $conf + $char + $aggr + $rapp;
+$quiz_points = translate_points($quiz_points, 20, 100, 0, 50);
+
+$kiss_points = $kiss * 2.5;
+if ($kiss_points > 25){
+	$kiss_points = 25;
+	}
+
+$date_points = $date * 2.5;
+if ($date_points > 25){
+	$date_points = 25;
+	}
+
+$charisma_score = round($quiz_points + $kiss_points + $date_points, 0);
+
+if ($charisma_score > 80 ):
+	$personality = 'natural';
+elseif ($charisma_score <= 25 ):
+	$personality = 'thinker';
+elseif ($charisma_score <= 80 && $charisma_score > 25):
+	switch (calculate_highest_trait($char, $aggr, $rapp)){
+	case 1: $personality = 'entertainer'; break;
+	case 2: $personality = 'friend'; break; 
+	case 3: $personality = 'daredevil'; break;
+	}
+endif;
+header('Location: http://www.pickuppodcast.com/scquiz/email.php?p='.$personality.'&c='.$charisma_score);
+
+
+?>
+
+<script>
+/* quiz.js */
+/* specification:
+** 
+** initial state: fieldset 1 visible, #prevpage and #getresult hidden
+**
+** get array of all fieldset elements
+** initialize "page number" to 1
+** bind to #nextpage / #prevpage
+** on next/prev click:
+**	if (validate fieldsets[page#])
+**		hide fieldsets[page#]
+** 		inc/dec page count
+**		show fieldsets[page#]
+**		if page# = 5, hide #nextpage & show #getresult
+**		if page# > 1, show #prevpage
+** on #getresult click
+**	if (validate form), submit form
+**
+** and... that's it for now!
+*/
+
+$("document").ready(function(){
+	var pageNum = 1;
+	
+	$("#nextpage, #prevpage, #getresult").button();
+	
+	$("#nextpage").click(function(e){
+		e.preventDefault();
+		
+		//if (validate fieldset:visible) // TODO: add form validation
+		$("fieldset:visible").slideUp('slow',function(){
+			$(this).next("fieldset").slideToggle();
+		});
+		pageNum++;
+		if (pageNum>1) { $("#prevpage").show(); }
+		if (pageNum>=5) { $("#nextpage").hide(); $("#getresult").show(); }
+	});
+	
+	$("#prevpage").click(function(e){
+		e.preventDefault();
+		//if (validate fieldset:visible) // TODO: add form validation
+		$("fieldset:visible").slideUp('slow',function(){
+			$(this).prev("fieldset").slideToggle();
+		});
+		pageNum--;
+		if (pageNum<=1) { $("#prevpage").hide(); }
+		if (pageNum<5) { $("#nextpage").show(); $("#getresult").hide(); }
+	});
+	
+	$("#getresult").click(function(e){
+		e.preventDefault();
+		//if (validate fieldset:visible) // TODO: add form validation
+		$("form").submit();
+	});
+});
+</script>
